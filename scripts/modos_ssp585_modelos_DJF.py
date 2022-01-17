@@ -82,12 +82,13 @@ dato_sst = cargo_todo_crudos_remap(scenarios,models,ruta,var[1])
 from eofs.xarray import Eof
 #Hago analisis de componentes principales para DJF y guardo analisis en un .csv
 path = '/home/julia.mindlin/Tesis/Capitulo3/scripts/EOF_SST_evaluation/figuras'
+
 dic = {}
 for model in models[:]:
     dic[model] = {}
-    ssts_20 = dato_sst[scenarios[0]][model][0].sel(time=slice('1900','2014'))
+    ssts_20 = dato_sst[scenarios[0]][model][0].sel(time=slice('1900','1999'))
     ssts_21 = xr.merge([dato_sst[scenarios[0]][model][0].sel(time=slice('2000','2014')).tos,dato_sst[scenarios[1]][model][0].sel(time=slice('2015','2099')).tos])    
-    ssts_anom = funciones.anomalias(ssts_20,ssts_20)
+    ssts_anom = funciones.anomalias(ssts_21,ssts_20)
     ssts_anom = funciones.seasonal_data(ssts_anom,'DJF') 
     #Primero lo hago sin seleccionar estaciones
     #dat = ssts.sel(time=cross_year_season(ssts.tos['time.month'])).sel(lat=slice(20,-20)).sel(lon=slice(120,290)).sel(time=slice('1950-01','1999-12'))
@@ -97,7 +98,7 @@ for model in models[:]:
     solver = Eof(aux1)
     pcs = solver.pcs()
     eofs = solver.eofs()
-    a = 0; b = 0; c = 0
+    a = 0; b = 0; c = 0; d = 0
     if eofs.sel(mode=0).sel(lat=slice(5,-5)).sel(lon=slice(190,240)).mean(dim='lat').mean(dim='lon') > 0.:
         dic[model]['sst_mode1'] = pcs.sel(mode=0)
     else:
@@ -108,11 +109,16 @@ for model in models[:]:
     else:
         dic[model]['sst_mode2'] = -pcs.sel(mode=1)
         b = 1
-    if eofs.sel(mode=2).sel(lat=slice(5,-5)).sel(lon=slice(190,240)).mean(dim='lat').mean(dim='lon') > 0.:
-        dic[model]['sst_mode3'] = -pcs.sel(mode=2)
-    else:
+    if eofs.sel(mode=2).sel(lat=slice(5,-5)).sel(lon=slice(210,270)).mean(dim='lat').mean(dim='lon') > 0.:
         dic[model]['sst_mode3'] = pcs.sel(mode=2)
+    else:
+        dic[model]['sst_mode3'] = -pcs.sel(mode=2)
         c = 1
+    if eofs.sel(mode=3).sel(lat=slice(5,-5)).sel(lon=slice(190,240)).mean(dim='lat').mean(dim='lon') > 0.:
+        dic[model]['sst_mode4'] = pcs.sel(mode=3)
+    else:
+        dic[model]['sst_mode4'] = -pcs.sel(mode=3)
+        d = 1
         
     dic[model]['E_index'] = (dic[model]['sst_mode1'] - dic[model]['sst_mode2'])/np.sqrt(2)
     dic[model]['C_index'] = (dic[model]['sst_mode1'] + dic[model]['sst_mode2'])/np.sqrt(2)
@@ -124,7 +130,7 @@ for model in models[:]:
     dic[model]['fv'] = solver.varianceFraction()
     reg = clases.regression()
     regressors = pd.DataFrame({'mode1':funciones.standardize(dic[model]['sst_mode1']),'mode2':funciones.standardize(dic[model]['sst_mode2']),
-                              'mode3':funciones.standardize(dic[model]['sst_mode3'])})
+                              'mode3':funciones.standardize(dic[model]['sst_mode3']),'mode4':funciones.standardize(dic[model]['sst_mode4'])})
     reg.regressors = regressors
     out_reg = reg.perform_regression(ssts_anom.tos)
     levels = np.arange(-.5,.55,.05)
@@ -147,19 +153,25 @@ for model in models[:]:
     else:
         datos.append(out_reg['mode3']['coef'])
         
+    if d == 0:
+        datos.append(out_reg['mode4']['coef'])
+    else:
+        datos.append(out_reg['mode4']['coef'])
+
     fv = [round(dic[model]['fv'].sel(mode=0).values*100,2),round(dic[model]['fv'].sel(mode=1).values*100,2),
-          round(dic[model]['fv'].sel(mode=2).values*100,2)]
-    dic_tit_mapa = [model+' EOF1 '+str(fv[0])+'% 1900 - 1999 (DJF)',
-                    model+' EOF2 '+str(fv[1])+'% 1900 - 1999 (DJF)',
-                    model+' EOF3 '+str(fv[2])+'% 1900 - 1999 (DJF)']
-    dic_tit_serie = ['PC1','PC2','PC3']
+          round(dic[model]['fv'].sel(mode=2).values*100,2),round(dic[model]['fv'].sel(mode=3).values*100,2)]
+    dic_tit_mapa = [model+' EOF1 '+str(fv[0])+'% 2000 - 2099 (DJF)',
+                    model+' EOF2 '+str(fv[1])+'% 2000 - 2099 (DJF)',
+                    model+' EOF3 '+str(fv[2])+'% 2000 - 2099 (DJF)',
+                    model+' EOF4 '+str(fv[3])+'% 2000 - 2099 (DJF)']
+    dic_tit_serie = ['PC1','PC2','PC3','PC4']
     datos_r2 = datos
     #datos = [out_reg_ersstv5['mode1']['coef'],out_reg_ersstv5['mode2']['coef']]
     #datos_r2 = [out_reg_ersstv5['mode1']['r2'],out_reg_ersstv5['mode1']['r2']]
-    t = [time,time,time]
-    series = [dic[model]['sst_mode1'],dic[model]['sst_mode2'],dic[model]['sst_mode3']]
-    levels = [np.arange(-2.5,2.5,.25),np.arange(-1,1,.1),np.arange(-.5,.5,.05)]
+    t = [time,time,time,time]
+    series = [dic[model]['sst_mode1'],dic[model]['sst_mode2'],dic[model]['sst_mode3'],dic[model]['sst_mode4']]
+    levels = [np.arange(-2,2,.25),np.arange(-.8,.8,.08),np.arange(-.4,.4,.04),np.arange(-.4,.4,.04)]
     fig = funciones.fig_sst_multiple(datos,datos_r2,t,series,dic_tit_mapa,dic_tit_serie,levels)
-    fig.savefig(path+'/EOF_wo_detrending_'+model+'_1900_2014.png') 
+    fig.savefig(path+'/EOF_wo_detrending_'+model+'_2000_2099.png') 
 
 

@@ -29,7 +29,7 @@ def anomalias(dato,reference):
 #Select DJF months
 def seasonal_data(data,season):
     # select DJF
-    DA_DJF = data.sel(time = data.time.dt.season=="DJF")
+    DA_DJF = data.sel(time = data.time.dt.season==season)
 
     # calculate mean per year
     DA_DJF = DA_DJF.groupby(DA_DJF.time.dt.year).mean("time")

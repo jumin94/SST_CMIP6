@@ -27,10 +27,12 @@ import funciones
 import diccionarios
 import clases
 
-#Evaluo simulaciones 1pctCO2 con dos preguntas en mente:
-# 1. ¿como cambia el aumento de temperatura global de ssts en uno y otro?  -  rol de los aerosoles
-# 2. ¿como son los cambios en ENSO? ¿que puedo decir del cambio en intenidad y frecuencia?
+#Evaluo simulaciones historicas
+#Tres apporaches
+#1. 
 #Open datasets
+
+
 #Funciones--------------------------------------------------------
 def cargo_todo_crudos_remap(scenarios,models,ruta,var):
     os.chdir(ruta)
@@ -38,9 +40,8 @@ def cargo_todo_crudos_remap(scenarios,models,ruta,var):
     dic = {}
     dic['historical'] = {}
     dic['ssp585'] = {}
-    dic['1pctCO2'] = {}
     for scenario in dic.keys():
-        listOfFiles = os.listdir(ruta+'/'+scenario+var)
+        listOfFiles = os.listdir(ruta+'/'+scenario+'/'+var)
         for model in models:
             dic[scenario][model] = []
             pattern = "*"+model+"*"+scenario+"*remap*"
@@ -66,11 +67,17 @@ models = [
             'MRI-ESM2-0', 'NESM3', 'NorESM2-LM', 'NorESM2-MM','TaiESM1','UKESM1-0-LL'
             ]
 
+scenarios = ['historical','ssp585']
+variables = ['tos']
+
+path = '/pikachu/datos/CMIP6_backup/Data_used/'
 ruta = '/datos/julia.mindlin/CMIP6_remap'
 
 var = ['/pr','/tos','/psl']
-scenarios = ['historical','ssp585','1pctCO2']
+scenarios = ['historical','ssp585']
 dato_sst = cargo_todo_crudos_remap(scenarios,models,ruta,var[1])
+
+
 
 from eofs.xarray import Eof
 #Hago analisis de componentes principales para DJF y guardo analisis en un .csv
@@ -78,22 +85,21 @@ path = '/home/julia.mindlin/Tesis/Capitulo3/scripts/EOF_SST_evaluation/figuras'
 
 dic = {}
 for model in models[:]:
-    dic[model] = {}
     try:
-      full_period = dato_sst[scenarios[2]][model][0].tos
-      full_period = funciones.anomalias(full_period,full_period.isel(time=slice(0,int(12*50))))
-      #full_period = full_period.rename({'year':'time'})
+      dic[model] = {}
+      full_period = xr.merge([dato_sst[scenarios[0]][model][0].sel(time=slice('1950','2014')).tos,dato_sst[scenarios[1]][model][0].sel(time=slice('2015','2099')).tos])
+      full_period = funciones.anomalias(full_period,full_period.sel(time=slice('1950','2000')))
       gw = full_period.mean(dim='lon').mean(dim='lat')
       reg = clases.regression()
-      regressors = pd.DataFrame({'gw':gw})
+      regressors = pd.DataFrame({'gw':gw.tos})
       reg.regressors = regressors
-      aux = full_period.rename({'time':'year'})
+      aux = full_period.tos.rename({'time':'year'})
       out_reg1 = reg.perform_regression(aux)
-      ssts_wo_gw = full_period - out_reg1['gw']['coef']*gw
+      ssts_wo_gw = full_period - out_reg1['gw']['coef']*gw.tos
     
       dat = ssts_wo_gw.sel(lat=slice(15,-15)).sel(lon=slice(150,280))#.sel(time=slice('1950-01','1999-12'))
       lat = dat.lat; lon = dat.lon; time = dat.time
-      solver = Eof(dat)
+      solver = Eof(dat.tos)
       pcs = solver.pcs()
       eofs = solver.eofs()
       a = 0; b = 0; c = 0; d = 0
@@ -117,7 +123,7 @@ for model in models[:]:
       else:
           dic[model]['sst_mode4'] = -pcs.sel(mode=3)
           d = 1
- 
+
       dic[model]['E_index'] = (dic[model]['sst_mode1'] - dic[model]['sst_mode2'])/np.sqrt(2)
       dic[model]['C_index'] = (dic[model]['sst_mode1'] + dic[model]['sst_mode2'])/np.sqrt(2)
       dic[model]['nino34'] = dat.sel(lat=slice(5,-5)).sel(lon=slice(190,240)).mean(dim='lat').mean(dim='lon')
@@ -128,11 +134,11 @@ for model in models[:]:
       dic[model]['fv'] = solver.varianceFraction()
       reg = clases.regression()
       regressors = pd.DataFrame({'mode1':funciones.standardize(dic[model]['sst_mode1']),'mode2':funciones.standardize(dic[model]['sst_mode2']),
-                          'mode3':funciones.standardize(dic[model]['sst_mode3']),'mode4':funciones.standardize(dic[model]['sst_mode4'])})
+                                'mode3':funciones.standardize(dic[model]['sst_mode3']),'mode4':funciones.standardize(dic[model]['sst_mode4'])})
       reg.regressors = regressors
       out_reg = reg.perform_regression(aux)
       levels = np.arange(-.5,.55,.05)
-  
+
       #aux = out_reg_kaplan['mode2']['coef'].sel(lat=slice(15,-15)).sel(lon=slice(150,280)).fillna(0)
       #dic[model]['corr_kaplan'] = pattern_corr(eofs.sel(mode=1).fillna(0),aux)
       datos = []
@@ -145,30 +151,35 @@ for model in models[:]:
           datos.append(out_reg['mode1']['coef'])
       else:
           datos.append(out_reg['mode1']['coef'])
-  
+
       if c == 0:
           datos.append(out_reg['mode2']['coef'])
       else:
           datos.append(out_reg['mode2']['coef'])
-  
+
       if d == 0:
           datos.append(out_reg['mode3']['coef'])
       else:
           datos.append(out_reg['mode3']['coef'])
+
       fv = [round(dic[model]['fv'].sel(mode=0).values*100,2),round(dic[model]['fv'].sel(mode=1).values*100,2),
             round(dic[model]['fv'].sel(mode=2).values*100,2),round(dic[model]['fv'].sel(mode=3).values*100,2)]
-      dic_tit_mapa = [model+' GW (Annual)',
-                      model+' EOF1 '+str(fv[0])+'% (Annual)',
-                      model+' EOF2 '+str(fv[1])+'% (Annual)',
-                      model+' EOF3 '+str(fv[2])+'% (Annual)']
+      dic_tit_mapa = [model+' GW 1950 - 2099 (Annual)',
+                      model+' EOF1 '+str(fv[0])+'% 1950 - 2099 (Annual)',
+                      model+' EOF2 '+str(fv[1])+'% 1950 - 2099 (Annual)',
+                      model+' EOF3 '+str(fv[2])+'% 1950 - 2099 (Annual)']
       dic_tit_serie = ['GW','PC1','PC2','PC3']
       datos_r2 = datos
       #datos = [out_reg_ersstv5['mode1']['coef'],out_reg_ersstv5['mode2']['coef']]
       #datos_r2 = [out_reg_ersstv5['mode1']['r2'],out_reg_ersstv5['mode1']['r2']]
       t = [time,time,time,time]
-      series = [gw,dic[model]['sst_mode1'],dic[model]['sst_mode2'],dic[model]['sst_mode3']]
+      series = [gw.tos,dic[model]['sst_mode1'],dic[model]['sst_mode2'],dic[model]['sst_mode3']]
       levels = [np.arange(-3,3,.5),np.arange(-2,2,.5),np.arange(-.5,.6,.1),np.arange(-.5,.6,.1)]
       fig = funciones.fig_sst_multiple2(datos,datos_r2,t,series,dic_tit_mapa,dic_tit_serie,levels)
-      fig.savefig(path+'/EOF_regress_out_GW_'+model+'_1pctCO2_wo_seasonal_cycle_anual.png') 
+      fig.savefig(path+'/EOF_regress_out_GW_'+model+'_1950_2099_wo_seasonal_cycle_annual.png') 
     except:
-      print(model,'Este modelo no tiene dato')
+      print(model+' tiene problemas')
+
+
+
+
